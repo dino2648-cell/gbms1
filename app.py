@@ -6,9 +6,12 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # ==========================================
-# 🚨 [필수 확인] 선생님이 만드신 구글 시트 이름
+# 🚨 [필수 확인] 선생님이 만드신 구글 시트 이름으로 반드시 변경해주세요!
 SHEET_NAME = "학생상담누적DB" 
 # ==========================================
+
+# 저장할 엑셀 기둥(컬럼) 이름 세팅
+DB_COLUMNS = ["상담일자", "학생명", "상담내용", "주요영역", "핵심감정", "심리적원인", "개입목표", "교사행동지침", "추천첫마디"]
 
 # 1. API 및 구글 시트 권한 설정
 API_KEY = st.secrets["GEMINI_API_KEY"]
@@ -42,9 +45,8 @@ except Exception as e:
 existing_data = sheet.get_all_values()
 if not existing_data:
     # 시트가 비어있으면 뼈대(헤더) 세팅
-    headers = ["상담일자", "학생명", "상담내용", "주요영역", "핵심감정", "심리적원인", "개입목표", "교사행동지침", "추천첫마디"]
-    sheet.append_row(headers)
-    db_df = pd.DataFrame(columns=headers)
+    sheet.append_row(DB_COLUMNS)
+    db_df = pd.DataFrame(columns=DB_COLUMNS)
 else:
     db_df = pd.DataFrame(existing_data[1:], columns=existing_data[0])
 
@@ -65,7 +67,11 @@ st.divider()
 st.subheader("📤 새로운 상담 기록 분석 및 DB 저장")
 
 # 샘플 양식 다운로드 버튼
-sample_df = pd.DataFrame({"학생명": ["홍길동", "김유신"], "상담일자": ["2024-03-04", "2024-03-05"], "상담내용": ["성적이 떨어져서 우울해요.", "친구와 다퉈서 힘들어요."]})
+sample_df = pd.DataFrame({
+    "학생명": ["홍길동", "김유신"], 
+    "상담일자": ["2024-03-04", "2024-03-05"], 
+    "상담내용": ["성적이 떨어져서 너무 우울해요.", "친구들과 다퉈서 힘들어요."]
+})
 sample_csv = sample_df.to_csv(index=False).encode('utf-8-sig')
 st.download_button("📄 엑셀(CSV) 샘플 양식 다운로드", data=sample_csv, file_name="counseling_sample.csv", mime="text/csv")
 
@@ -80,7 +86,7 @@ def analyze_all_counseling(df_records):
     당신은 15년 차 경력의 전문 학생 심리 상담사입니다.
     아래 [학생 상담 기록 목록]을 모두 분석하여, 반드시 JSON 배열(Array) 형식으로 출력하세요.
     총 {len(df_records)}명의 데이터가 있습니다. 반드시 {len(df_records)}개의 JSON 객체를 순서대로 배열에 담아 반환하세요.
-    마크다운(```json 등)이나 다른 설명은 일절 적지 말고 오직 JSON 배열만 출력하세요.
+    마크다운이나 다른 설명은 일절 적지 말고 오직 JSON 배열만 출력하세요.
     
     [학생 상담 기록 목록]
     {records_text}
@@ -98,19 +104,61 @@ def analyze_all_counseling(df_records):
     ]
     """
     try:
-        model = genai.GenerativeModel(model_name="gemini-2.5-flash", generation_config={"response_mime_type": "application/json"})
+        model = genai.GenerativeModel(
+            model_name="gemini-2.5-flash", 
+            generation_config={"response_mime_type": "application/json"}
+        )
         response = model.generate_content(prompt)
         
+        # 줄바꿈 오류 방지를 위해 분리 작성
         raw_text = response.text.strip()
-        if raw_text.startswith("
-http://googleusercontent.com/immersive_entry_chip/0
-http://googleusercontent.com/immersive_entry_chip/1
-http://googleusercontent.com/immersive_entry_chip/2
+        if raw_text.startswith("```json"):
+            raw_text = raw_text[7:]
+        if raw_text.startswith("```"):
+            raw_text = raw_text[3:]
+        if raw_text.endswith("```"):
+            raw_text = raw_text[:-3]
+            
+        parsed = json.loads(raw_text.strip())
+        
+        while len(parsed) < len(df_records):
+            parsed.append({
+                "domain": "분석누락", "emotion": "-", "cause": "누락", 
+                "goal": "-", "action": "-", "first_words": "-"
+            })
+            
+        return parsed[:len(df_records)] 
+    except Exception as e:
+        return f"API 에러 발생: {str(e)}"
 
----
+if file:
+    new_df = pd.read_csv(file)
+    st.info(f"📄 총 {len(new_df)}건의 새로운 상담 데이터가 확인되었습니다.")
 
-저장을 마치시고 스트림릿 화면이 재부팅(Baking)될 때까지 1~2분 정도만 기다려주세요.
+    if st.button("🚀 분석 시작 및 DB(구글 시트)에 영구 저장하기"):
+        with st.spinner("AI가 분석하고 구글 서버에 저장 중입니다. 잠시만 기다려주세요..."):
+            
+            parsed_data = analyze_all_counseling(new_df)
+            
+            if isinstance(parsed_data, str):
+                st.error(parsed_data)
+            elif not parsed_data:
+                st.error("오류가 발생했습니다.")
+            else:
+                analysis_df = pd.DataFrame(parsed_data)
+                analysis_df.rename(columns={
+                    "domain": "주요영역", "emotion": "핵심감정", "cause": "심리적원인",
+                    "goal": "개입목표", "action": "교사행동지침", "first_words": "추천첫마디"
+                }, inplace=True)
 
-**"AI가 분석하고 구글 서버에 저장 중입니다."** 라는 로딩바가 무사히 넘어가고 나면, 선생님의 비어있던 구글 스프레드시트에 마법처럼 글씨가 쫙 채워지는 것을 실시간으로 보실 수 있을 겁니다! 
-
-테스트용 엑셀 파일을 하나 업로드해서 작동을 확인해 보시겠어요? 막히는 부분이 있다면 바로 알려주십시오!
+                final_df = pd.concat([new_df.reset_index(drop=True), analysis_df], axis=1)
+                final_df['상담일자'] = pd.to_datetime(final_df['상담일자']).dt.strftime('%Y-%m-%d')
+                
+                # 구글 시트에 데이터 밀어넣기 (Append)
+                data_to_append = final_df[DB_COLUMNS].values.tolist()
+                sheet.append_rows(data_to_append)
+                
+                st.success("✅ 분석 완료! 구글 스프레드시트에 영구적으로 저장되었습니다. (새로고침 하시면 누적 데이터를 볼 수 있습니다)")
+                
+                st.subheader("이번에 추가된 분석 결과")
+                st.dataframe(final_df, use_container_width=True)
