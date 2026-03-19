@@ -3,7 +3,7 @@ import pandas as pd
 import google.generativeai as genai
 import json
 
-# 🔑 API 설정 (선생님의 API 키)
+# 🔑 API 설정 (스트림릿 클라우드 비밀금고 연동)
 API_KEY = st.secrets["GEMINI_API_KEY"]
 genai.configure(api_key=API_KEY)
 
@@ -12,9 +12,36 @@ st.set_page_config(page_title="학생 심리 분석 시스템", layout="wide")
 
 st.title("🧠 AI 학생 심리 상담 심층 분석 시스템")
 st.markdown("단 한 번의 AI 분석으로 전체 학생의 데이터를 에러 없이 빠르게 표 형태로 정리합니다.")
+st.divider()
 
-# 파일 업로드
-file = st.file_uploader("상담 데이터 CSV 파일 업로드 (학생명, 상담일자, 상담내용 포함)", type=["csv"])
+# --- [신규 기능] 1. 샘플 엑셀(CSV) 양식 다운로드 ---
+st.subheader("📥 1. 상담 데이터 양식 다운로드")
+st.markdown("처음 사용하시는 분은 아래 샘플 양식을 다운로드하여 학생 데이터를 작성해 주세요. (엑셀에서 열고 편집한 뒤 CSV로 저장하세요)")
+
+# 예시 데이터가 들어간 샘플 데이터프레임 생성
+sample_df = pd.DataFrame({
+    "학생명": ["홍길동", "김유신"],
+    "상담일자": ["2024-03-04", "2024-03-05"],
+    "상담내용": [
+        "최근 성적이 떨어져서 너무 우울하고 아무것도 하기 싫어요.",
+        "친한 친구들과 다퉈서 학교에 가기 눈치 보이고 힘들어요."
+    ]
+})
+# 한글 깨짐 방지를 위해 utf-8-sig로 인코딩
+sample_csv = sample_df.to_csv(index=False).encode('utf-8-sig')
+
+st.download_button(
+    label="📄 엑셀(CSV) 샘플 양식 다운로드",
+    data=sample_csv,
+    file_name="counseling_sample_template.csv",
+    mime="text/csv"
+)
+
+st.divider()
+
+# --- 2. 파일 업로드 ---
+st.subheader("📤 2. 데이터 업로드 및 분석")
+file = st.file_uploader("작성된 상담 데이터 CSV 파일 업로드", type=["csv"])
 
 # ✅ [일괄 처리] 여러 명의 데이터를 한 번에 분석하는 함수
 def analyze_all_counseling(df_records):
@@ -44,7 +71,6 @@ def analyze_all_counseling(df_records):
     ]
     """
     try:
-        # 💡 [완벽 해결] 선생님의 목록에 실제로 존재하는 최신 모델 'gemini-2.5-flash' 적용!
         model = genai.GenerativeModel(
             model_name="gemini-2.5-flash",
             generation_config={"response_mime_type": "application/json"}
@@ -63,7 +89,7 @@ def analyze_all_counseling(df_records):
             
         parsed = json.loads(raw_text.strip())
         
-        # AI가 혹시라도 분석 개수를 빼먹었을 경우를 대비한 안전 장치
+        # 안전 장치
         while len(parsed) < len(df_records):
             parsed.append({
                 "domain": "분석누락", "emotion": "-", "cause": "AI가 데이터 일부를 누락했습니다.",
@@ -83,18 +109,12 @@ if file:
     if st.button("🚀 상담 내용 일괄 분석 및 표 정리 시작"):
         with st.spinner("최신 AI 모델이 전체 데이터를 한 번에 분석 중입니다. (보통 5~10초 소요)"):
             
-            # 단 1번의 API 호출 (반복문 없음 -> 429 에러 완벽 차단)
             parsed_data_list = analyze_all_counseling(df)
             
-            # 에러가 발생해서 문자열이 반환된 경우
             if isinstance(parsed_data_list, str):
                 st.error(parsed_data_list)
-            
-            # 분석 결과가 비어있는 경우
             elif not parsed_data_list:
                 st.error("데이터 분석 중 오류가 발생했습니다. 다시 시도해 주세요.")
-                
-            # 정상적으로 분석이 완료된 경우
             else:
                 analysis_df = pd.DataFrame(parsed_data_list)
                 
@@ -163,7 +183,7 @@ if file:
                             """, unsafe_allow_html=True)
                             st.markdown("---")
 
-                # --- 5. 다운로드 ---
+                # --- 5. 최종 다운로드 ---
                 st.divider()
                 csv = final_df.to_csv(index=False).encode('utf-8-sig')
-                st.download_button("📥 통합 데이터 다운로드 (Excel용 CSV)", csv, "counseling_table.csv", "text/csv")
+                st.download_button("📥 통합 분석 데이터 다운로드 (Excel용 CSV)", csv, "counseling_table.csv", "text/csv")
