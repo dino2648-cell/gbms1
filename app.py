@@ -2,48 +2,75 @@ import streamlit as st
 import pandas as pd
 import google.generativeai as genai
 import json
+import gspread
+from google.oauth2.service_account import Credentials
 
-# 🔑 API 설정 (스트림릿 클라우드 비밀금고 연동)
+# ==========================================
+# 🚨 [필수 확인] 선생님이 만드신 구글 시트 이름
+SHEET_NAME = "학생상담누적DB" 
+# ==========================================
+
+# 1. API 및 구글 시트 권한 설정
 API_KEY = st.secrets["GEMINI_API_KEY"]
 genai.configure(api_key=API_KEY)
 
-# 페이지 기본 설정
-st.set_page_config(page_title="학생 심리 분석 시스템", layout="wide")
-
-st.title("🧠 AI 학생 심리 상담 심층 분석 시스템")
-st.markdown("단 한 번의 AI 분석으로 전체 학생의 데이터를 에러 없이 빠르게 표 형태로 정리합니다.")
-st.divider()
-
-# --- [신규 기능] 1. 샘플 엑셀(CSV) 양식 다운로드 ---
-st.subheader("📥 1. 상담 데이터 양식 다운로드")
-st.markdown("처음 사용하시는 분은 아래 샘플 양식을 다운로드하여 학생 데이터를 작성해 주세요. (엑셀에서 열고 편집한 뒤 CSV로 저장하세요)")
-
-# 예시 데이터가 들어간 샘플 데이터프레임 생성
-sample_df = pd.DataFrame({
-    "학생명": ["홍길동", "김유신"],
-    "상담일자": ["2024-03-04", "2024-03-05"],
-    "상담내용": [
-        "최근 성적이 떨어져서 너무 우울하고 아무것도 하기 싫어요.",
-        "친한 친구들과 다퉈서 학교에 가기 눈치 보이고 힘들어요."
+@st.cache_resource
+def init_connection():
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
     ]
-})
-# 한글 깨짐 방지를 위해 utf-8-sig로 인코딩
-sample_csv = sample_df.to_csv(index=False).encode('utf-8-sig')
+    creds_dict = json.loads(st.secrets["GOOGLE_CREDENTIALS_JSON"])
+    creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+    return gspread.authorize(creds)
 
-st.download_button(
-    label="📄 엑셀(CSV) 샘플 양식 다운로드",
-    data=sample_csv,
-    file_name="counseling_sample_template.csv",
-    mime="text/csv"
-)
+client = init_connection()
 
+# 페이지 설정
+st.set_page_config(page_title="학생 심리 분석 시스템", layout="wide")
+st.title("🧠 AI 학생 심리 상담 심층 분석 시스템 (DB 연동형)")
+st.markdown("단 한 번의 분석으로 엑셀 파일을 정리하고, 구글 클라우드에 데이터를 영구적으로 누적합니다.")
+
+# 2. 구글 시트 데이터 불러오기
+try:
+    sheet = client.open(SHEET_NAME).sheet1
+except Exception as e:
+    st.error(f"❌ '{SHEET_NAME}' 구글 시트를 찾을 수 없습니다. 시트 이름이 맞는지, 로봇 이메일로 '편집자' 공유를 하셨는지 확인해 주세요!")
+    st.stop()
+
+# 기존 데이터 읽기
+existing_data = sheet.get_all_values()
+if not existing_data:
+    # 시트가 비어있으면 뼈대(헤더) 세팅
+    headers = ["상담일자", "학생명", "상담내용", "주요영역", "핵심감정", "심리적원인", "개입목표", "교사행동지침", "추천첫마디"]
+    sheet.append_row(headers)
+    db_df = pd.DataFrame(columns=headers)
+else:
+    db_df = pd.DataFrame(existing_data[1:], columns=existing_data[0])
+
+# --- [대시보드] 누적된 데이터 모니터링 ---
+if not db_df.empty:
+    with st.expander("📊 현재까지 누적된 전체 학생 상담 현황 보기 (클릭하여 펼치기)", expanded=False):
+        st.dataframe(db_df, use_container_width=True)
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("**영역별 누적 상담 건수**")
+            st.bar_chart(db_df["주요영역"].value_counts())
+        with col2:
+            st.markdown("**발견된 주요 감정 키워드**")
+            st.dataframe(db_df["핵심감정"].value_counts().reset_index().rename(columns={"핵심감정":"키워드", "count":"빈도수"}), hide_index=True)
 st.divider()
 
-# --- 2. 파일 업로드 ---
-st.subheader("📤 2. 데이터 업로드 및 분석")
+# --- [신규 분석] 새로운 데이터 업로드 및 DB 추가 ---
+st.subheader("📤 새로운 상담 기록 분석 및 DB 저장")
+
+# 샘플 양식 다운로드 버튼
+sample_df = pd.DataFrame({"학생명": ["홍길동", "김유신"], "상담일자": ["2024-03-04", "2024-03-05"], "상담내용": ["성적이 떨어져서 우울해요.", "친구와 다퉈서 힘들어요."]})
+sample_csv = sample_df.to_csv(index=False).encode('utf-8-sig')
+st.download_button("📄 엑셀(CSV) 샘플 양식 다운로드", data=sample_csv, file_name="counseling_sample.csv", mime="text/csv")
+
 file = st.file_uploader("작성된 상담 데이터 CSV 파일 업로드", type=["csv"])
 
-# ✅ [일괄 처리] 여러 명의 데이터를 한 번에 분석하는 함수
 def analyze_all_counseling(df_records):
     records_text = ""
     for i, row in df_records.iterrows():
@@ -58,7 +85,7 @@ def analyze_all_counseling(df_records):
     [학생 상담 기록 목록]
     {records_text}
 
-    [출력 JSON 양식] - 배열 안에 객체를 작성하세요.
+    [출력 JSON 양식]
     [
       {{
         "domain": "(학업/교우관계/심리정서/진로/가정/학교생활 중 1개)",
@@ -71,119 +98,19 @@ def analyze_all_counseling(df_records):
     ]
     """
     try:
-        model = genai.GenerativeModel(
-            model_name="gemini-2.5-flash",
-            generation_config={"response_mime_type": "application/json"}
-        )
-        
+        model = genai.GenerativeModel(model_name="gemini-2.5-flash", generation_config={"response_mime_type": "application/json"})
         response = model.generate_content(prompt)
         
-        # 텍스트 정제 및 JSON 파싱
         raw_text = response.text.strip()
-        if raw_text.startswith("```json"):
-            raw_text = raw_text[7:]
-        if raw_text.startswith("```"):
-            raw_text = raw_text[3:]
-        if raw_text.endswith("```"):
-            raw_text = raw_text[:-3]
-            
-        parsed = json.loads(raw_text.strip())
-        
-        # 안전 장치
-        while len(parsed) < len(df_records):
-            parsed.append({
-                "domain": "분석누락", "emotion": "-", "cause": "AI가 데이터 일부를 누락했습니다.",
-                "goal": "-", "action": "-", "first_words": "-"
-            })
-            
-        return parsed[:len(df_records)] 
-        
-    except Exception as e:
-        return f"API 에러 발생: {str(e)}"
+        if raw_text.startswith("
+http://googleusercontent.com/immersive_entry_chip/0
+http://googleusercontent.com/immersive_entry_chip/1
+http://googleusercontent.com/immersive_entry_chip/2
 
-# --- 메인 실행 로직 ---
-if file:
-    df = pd.read_csv(file)
-    st.info(f"📄 총 {len(df)}건의 상담 데이터가 업로드되었습니다.")
+---
 
-    if st.button("🚀 상담 내용 일괄 분석 및 표 정리 시작"):
-        with st.spinner("최신 AI 모델이 전체 데이터를 한 번에 분석 중입니다. (보통 5~10초 소요)"):
-            
-            parsed_data_list = analyze_all_counseling(df)
-            
-            if isinstance(parsed_data_list, str):
-                st.error(parsed_data_list)
-            elif not parsed_data_list:
-                st.error("데이터 분석 중 오류가 발생했습니다. 다시 시도해 주세요.")
-            else:
-                analysis_df = pd.DataFrame(parsed_data_list)
-                
-                analysis_df.rename(columns={
-                    "domain": "주요영역", "emotion": "핵심감정", "cause": "심리적원인",
-                    "goal": "개입목표", "action": "교사행동지침", "first_words": "추천첫마디"
-                }, inplace=True)
+저장을 마치시고 스트림릿 화면이 재부팅(Baking)될 때까지 1~2분 정도만 기다려주세요.
 
-                final_df = pd.concat([df.reset_index(drop=True), analysis_df], axis=1)
-                final_df['상담일자'] = pd.to_datetime(final_df['상담일자']).dt.strftime('%Y-%m-%d')
-                
-                st.success("✅ 모든 분석이 에러 없이 완벽하게 끝났습니다!")
+**"AI가 분석하고 구글 서버에 저장 중입니다."** 라는 로딩바가 무사히 넘어가고 나면, 선생님의 비어있던 구글 스프레드시트에 마법처럼 글씨가 쫙 채워지는 것을 실시간으로 보실 수 있을 겁니다! 
 
-                # --- 1. 종합 데이터 표 ---
-                st.divider()
-                st.subheader("📋 전체 학생 상담 분석 결과 (통합 표)")
-                st.dataframe(final_df, use_container_width=True)
-
-                # --- 2. 통계 요약 ---
-                st.divider()
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.subheader("📊 영역별 상담 건수")
-                    domain_counts = final_df["주요영역"].value_counts()
-                    st.bar_chart(domain_counts)
-                with col2:
-                    st.subheader("💡 발견된 주요 핵심 감정")
-                    emotion_counts = final_df["핵심감정"].value_counts().reset_index()
-                    emotion_counts.columns = ["핵심감정(키워드)", "학생 수"]
-                    st.dataframe(emotion_counts, use_container_width=True, hide_index=True)
-
-                # --- 3. 군집화 (그룹 관리) ---
-                st.divider()
-                st.subheader("👥 특성별 학생 그룹 관리 (군집화)")
-                grouped = final_df.groupby("주요영역")
-                for domain, group_data in grouped:
-                    students_in_group = ", ".join(group_data["학생명"].unique())
-                    with st.expander(f"📌 [{domain}] 그룹 - 총 {len(group_data)}건 (해당 학생: {students_in_group})"):
-                        group_display_df = group_data[["상담일자", "학생명", "핵심감정", "상담내용", "교사행동지침"]]
-                        st.dataframe(group_display_df, use_container_width=True, hide_index=True)
-
-                # --- 4. 모니터링 리포트 ---
-                st.divider()
-                st.subheader("📈 학생별 상세 모니터링 리포트")
-                for name in final_df["학생명"].unique():
-                    student_data = final_df[final_df["학생명"] == name].sort_values(by="상담일자")
-                    with st.expander(f"👤 {name} 학생 모니터링 보드 (총 {len(student_data)}회 상담)"):
-                        if len(student_data) > 1:
-                            first_record = student_data.iloc[0]
-                            last_record = student_data.iloc[-1]
-                            st.markdown("### 🔄 학생 상태 변화 추이")
-                            col_a, col_b, col_c = st.columns(3)
-                            col_a.metric("최초 상담일", first_record['상담일자'])
-                            col_b.metric("최근 상담일", last_record['상담일자'])
-                            col_c.metric("주요 영역 변화", f"{first_record['주요영역']} ➔ {last_record['주요영역']}")
-                            st.info(f"초기: **'{first_record['핵심감정']}'** ➔ 최근: **'{last_record['핵심감정']}'**")
-                            
-                        st.markdown("### 📝 상세 상담 기록")
-                        for _, row in student_data.iterrows():
-                            st.markdown(f"**📅 {row['상담일자']}** | 🗣️ {row['상담내용']}")
-                            st.markdown(f"""
-                            * **분류/감정:** `{row['주요영역']}` / `{row['핵심감정']}`
-                            * **원인/목표:** {row['심리적원인']} / {row['개입목표']}
-                            * **행동 지침:** {row['교사행동지침']}
-                            * **첫마디:** <span style='color:#D32F2F;'>{row['추천첫마디']}</span>
-                            """, unsafe_allow_html=True)
-                            st.markdown("---")
-
-                # --- 5. 최종 다운로드 ---
-                st.divider()
-                csv = final_df.to_csv(index=False).encode('utf-8-sig')
-                st.download_button("📥 통합 분석 데이터 다운로드 (Excel용 CSV)", csv, "counseling_table.csv", "text/csv")
+테스트용 엑셀 파일을 하나 업로드해서 작동을 확인해 보시겠어요? 막히는 부분이 있다면 바로 알려주십시오!
