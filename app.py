@@ -6,7 +6,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # ==========================================
-# 🚨 주소 전체 대신, 선생님 시트의 '고유 번호(ID)'만 사용합니다! (수정 완료)
+# 🚨 선생님 시트의 '고유 번호(ID)'
 SHEET_ID = "14mUDHaDal_-ErQIMPNYmy5MPllZ0EZaNcuSFUwso0ZI" 
 # ==========================================
 
@@ -34,18 +34,17 @@ st.set_page_config(page_title="학생 심리 분석 시스템", layout="wide")
 st.title("🧠 AI 학생 심리 상담 심층 분석 시스템 (DB 연동형)")
 st.markdown("단 한 번의 분석으로 엑셀 파일을 정리하고, 구글 클라우드에 데이터를 영구적으로 누적합니다.")
 
-# 2. 구글 시트 고유 ID로 100% 확실하게 데이터 불러오기
+# 2. 구글 시트 데이터 불러오기
 try:
     sheet = client.open_by_key(SHEET_ID).sheet1
 except Exception as e:
     st.error("❌ 구글 시트에 접근할 수 없습니다. 로봇 이메일에 '편집자' 권한이 잘 부여되었는지 확인해 주세요.")
-    st.warning(f"🔍 [상세 에러 원인 분석]: {str(e)}") # 👈 진짜 에러 원인을 화면에 띄워줍니다!
+    st.warning(f"🔍 [상세 에러 원인 분석]: {repr(e)}") 
     st.stop()
 
 # 기존 데이터 읽기
 existing_data = sheet.get_all_values()
 if not existing_data:
-    # 시트가 비어있으면 뼈대(헤더) 세팅
     sheet.append_row(DB_COLUMNS)
     db_df = pd.DataFrame(columns=DB_COLUMNS)
 else:
@@ -54,7 +53,7 @@ else:
 # --- [대시보드] 누적된 데이터 모니터링 ---
 if not db_df.empty:
     with st.expander("📊 현재까지 누적된 전체 학생 상담 현황 보기 (클릭하여 펼치기)", expanded=False):
-        st.dataframe(db_df, use_container_width=True)
+        st.dataframe(db_df, use_container_width=True, hide_index=True)
         col1, col2 = st.columns(2)
         with col1:
             st.markdown("**영역별 누적 상담 건수**")
@@ -153,14 +152,42 @@ if file:
 
                 final_df = pd.concat([new_df.reset_index(drop=True), analysis_df], axis=1)
                 final_df['상담일자'] = pd.to_datetime(final_df['상담일자']).dt.strftime('%Y-%m-%d')
-                # 👉 추가된 코드: 컴퓨터용 빈칸(NaN)을 일반 빈칸("")으로 깔끔하게 청소!
+                
+                # 빈칸(NaN) 에러 방지 처리
                 final_df = final_df.fillna("")
                 
                 # 구글 시트에 데이터 밀어넣기 (Append)
                 data_to_append = final_df[DB_COLUMNS].values.tolist()
                 sheet.append_rows(data_to_append)
                 
-                st.success("✅ 분석 완료! 구글 스프레드시트에 영구적으로 저장되었습니다. (새로고침 하시면 누적 데이터를 볼 수 있습니다)")
+                st.success("✅ 분석 완료! 구글 스프레드시트에 영구적으로 저장되었습니다.")
                 
-                st.subheader("이번에 추가된 분석 결과")
-                st.dataframe(final_df, use_container_width=True)
+                st.divider()
+                st.subheader("📋 전체 요약 표")
+                # 컬럼 너비를 시스템이 자동 조절하도록 개선
+                st.dataframe(final_df, use_container_width=True, hide_index=True)
+
+                # 👉 [가독성 대폭 개선] 개별 학생 리포트 카드 UI 추가
+                st.divider()
+                st.subheader("📑 개별 학생 상세 분석 리포트")
+                
+                for idx, row in final_df.iterrows():
+                    # 각 학생마다 예쁜 박스(Container) 생성
+                    with st.container(border=True):
+                        st.markdown(f"### 👤 {row['학생명']} 학생 (상담일: {row['상담일자']})")
+                        
+                        # 화면을 반으로 나누어 왼쪽은 원본 내용, 오른쪽은 분석 결과 배치
+                        col_left, col_right = st.columns([1, 1])
+                        
+                        with col_left:
+                            st.info(f"**🗣️ 실제 상담 내용**\n\n{row['상담내용']}")
+                            
+                        with col_right:
+                            st.markdown(f"**📌 주요 영역:** `{row['주요영역']}`")
+                            st.markdown(f"**💡 핵심 감정:** `{row['핵심감정']}`")
+                            st.markdown(f"**🔍 심리적 원인:** {row['심리적원인']}")
+                            st.markdown(f"**🎯 개입 목표:** {row['개입목표']}")
+                            
+                        # 아래쪽에는 교사가 바로 참고할 지침과 첫 마디 강조
+                        st.warning(f"**🛠️ 교사 행동 지침:** {row['교사행동지침']}")
+                        st.success(f"**💬 추천 첫 마디:** {row['추천첫마디']}")
