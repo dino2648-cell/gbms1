@@ -6,11 +6,11 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # ==========================================
-# 🚨 선생님 시트의 '고유 번호(ID)'
-SHEET_ID = "14mUDHaDal_-ErQIMPNYmy5MPllZ0E ঐতিহ্যQIMPNYmy5MPllZ0EZaNcuSFUwso0ZI" 
+# 🚨 [오타 수정 완료] 선생님의 정상적인 시트 고유 번호(ID)
+SHEET_ID = "14mUDHaDal_-ErQIMPNYmy5MPllZ0EZaNcuSFUwso0ZI" 
 # ==========================================
 
-# 🌟 [업데이트] 새로운 기둥(컬럼) 2개 추가!
+# 🌟 새로운 기둥(컬럼) 2개 추가!
 DB_COLUMNS = ["상담일자", "학생명", "상담내용", "상담요약", "주요영역", "핵심감정", "심리적원인", "전문적분석", "개입목표", "교사행동지침", "추천첫마디"]
 
 # 1. API 및 구글 시트 권한 설정
@@ -39,6 +39,7 @@ try:
     sheet = client.open_by_key(SHEET_ID).sheet1
 except Exception as e:
     st.error("❌ 구글 시트에 접근할 수 없습니다. 로봇 권한을 확인해 주세요.")
+    st.warning(f"🔍 [상세 에러 원인 분석]: {repr(e)}") 
     st.stop()
 
 existing_data = sheet.get_all_values()
