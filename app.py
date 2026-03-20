@@ -10,7 +10,7 @@ from google.oauth2.service_account import Credentials
 SHEET_ID = "14mUDHaDal_-ErQIMPNYmy5MPllZ0EZaNcuSFUwso0ZI" 
 # ==========================================
 
-# 🌟 '기술스택', '추천진로' 컬럼 추가! (총 14개)
+# 🌟 최신 버전 기둥(컬럼) (총 14개)
 DB_COLUMNS = ["상담일자", "학생명", "상담내용", "상담요약", "기술스택", "추천진로", "주요영역", "핵심감정", "심리적원인", "전문적분석", "개입목표", "교사행동지침", "맞춤진로조언", "추천첫마디"]
 
 # 1. API 및 구글 시트 권한 설정
@@ -34,7 +34,7 @@ st.set_page_config(page_title="SW 마이스터고 학생 심리/진로 분석", 
 st.title("💻 SW 마이스터고 학생 심리 및 진로 통합 분석 시스템")
 st.markdown("예비 소프트웨어 개발자들의 멘탈 케어, 기술 스택 파악, 취업 진로 설계를 동시에 지원하는 대시보드입니다.")
 
-# 2. 구글 시트 데이터 불러오기
+# 2. 구글 시트 데이터 불러오기 (🛡️ 무적 방어 코드 적용)
 try:
     sheet = client.open_by_key(SHEET_ID).sheet1
 except Exception as e:
@@ -46,16 +46,28 @@ if not existing_data:
     sheet.append_row(DB_COLUMNS)
     db_df = pd.DataFrame(columns=DB_COLUMNS)
 else:
+    # 1. 시트에 있는 데이터를 그대로 일단 가져옴
     db_df = pd.DataFrame(existing_data[1:], columns=existing_data[0])
+    
+    # 🛡️ 방어 1단계: 과거 데이터에 '기술스택', '전문적분석' 등 새로운 기둥이 없다면? 에러 방지를 위해 강제로 만들어줌!
+    for col in DB_COLUMNS:
+        if col not in db_df.columns:
+            db_df[col] = "과거 기록 없음"  # 에러 대신 빈칸 문자열 삽입
+            
+    # 🛡️ 방어 2단계: 구글 시트 맨 윗줄(제목)이 옛날 버전이라면? 로봇이 알아서 최신 버전(14칸)으로 덮어쓰기!
+    if existing_data[0] != DB_COLUMNS:
+        try:
+            for i, col_name in enumerate(DB_COLUMNS):
+                sheet.update_cell(1, i+1, col_name)
+        except:
+            pass # 혹시 시트 업데이트 중 지연이 생겨도 웹사이트는 멈추지 않도록 패스
 
-# 🎨 [가독성+전문성 개선] 개별 학생 리포트 카드 (SW 특화)
+# 🎨 [가독성+전문성 개선] 개별 학생 리포트 카드
 def display_student_card(row):
     with st.container(border=True):
         st.markdown(f"### 👤 {row['학생명']} 학생 (상담일: {row['상담일자']})")
         
-        # 🌟 기술 스택과 추천 진로를 뱃지 형태로 상단에 강조!
         st.markdown(f"**🛠️ 관심/보유 기술 스택:** `{row['기술스택']}` ｜ **🎯 추천 세부 직무:** `{row['추천진로']}`")
-        
         st.info(f"**📝 상담 핵심 요약:** {row['상담요약']}")
         
         col_left, col_right = st.columns([1, 1])
@@ -69,13 +81,12 @@ def display_student_card(row):
             st.markdown(f"**🎯 단기 개입 목표:** {row['개입목표']}")
             st.success(f"**🧠 전문가 심층 분석 (심리/발달):** {row['전문적분석']}")
             
-        # 🌟 SW 개발자 특화 조언 섹션
         st.error(f"**💻 SW 직무 맞춤 진로 조언:** {row['맞춤진로조언']}")
         st.warning(f"**🛠️ 교사 행동 지침:** {row['교사행동지침']}")
         st.markdown(f"> **💬 추천 첫 마디:** {row['추천첫마디']}")
 
 # ==========================================
-# 🗂️ 화면을 3개의 탭으로 분리
+# 🗂️ 화면 탭 구성
 # ==========================================
 tab1, tab2, tab3 = st.tabs(["🚀 새로운 상담 분석 및 저장", "📊 누적 데이터 조회 및 모니터링", "🧭 SW 마이스터고 취업/진로 정보 가이드"])
 
@@ -103,7 +114,6 @@ with tab1:
         for i, row in df_records.iterrows():
             records_text += f"[ID: {i}] 학생명: {row['학생명']}, 상담내용: {row['상담내용']}\n"
 
-        # 🌟 AI 프롬프트에 '기술스택', '추천진로' 추출 명령 추가
         prompt = f"""
         당신은 15년 차 경력의 수석 학생 심리 상담사, 교육 심리학 전문가이자 'IT/소프트웨어 진로 전문 컨설턴트'입니다.
         현재 상담하는 학생들은 모두 '소프트웨어 마이스터 고등학교' 재학생으로, 졸업 후 곧바로 '소프트웨어 개발자'로 취업하는 것을 목표로 하고 있습니다.
@@ -198,7 +208,11 @@ with tab2:
         col1, col2, col3 = st.columns(3)
         with col1:
             st.markdown("**📊 영역별 상담 건수**")
-            st.bar_chart(db_df["주요영역"].value_counts())
+            # 🛡️ 에러 방지: 데이터가 아예 없는 경우 빈 차트 출력
+            if not db_df[db_df["주요영역"] != "과거 기록 없음"].empty:
+                st.bar_chart(db_df[db_df["주요영역"] != "과거 기록 없음"]["주요영역"].value_counts())
+            else:
+                st.write("표시할 영역 데이터가 부족합니다.")
         with col2:
             st.markdown("**💡 발견된 핵심 감정**")
             st.dataframe(db_df["핵심감정"].value_counts().reset_index().rename(columns={"핵심감정":"키워드", "count":"빈도수"}), hide_index=True, use_container_width=True)
