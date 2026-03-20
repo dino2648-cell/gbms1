@@ -110,15 +110,84 @@ with tab1:
         try:
             model = genai.GenerativeModel(model_name="gemini-2.5-flash", generation_config={"response_mime_type": "application/json"})
             response = model.generate_content(prompt)
+            
+            # 💡 줄바꿈 에러를 원천 차단하는 안전한 텍스트 청소 코드!
             raw_text = response.text.strip()
-            if raw_text.startswith("
-http://googleusercontent.com/immersive_entry_chip/0
-http://googleusercontent.com/immersive_entry_chip/1
-http://googleusercontent.com/immersive_entry_chip/2
+            raw_text = raw_text.replace("```json", "").replace("```", "").strip()
+            
+            parsed = json.loads(raw_text)
+            while len(parsed) < len(df_records):
+                parsed.append({"domain": "분석누락", "emotion": "-", "cause": "누락", "goal": "-", "action": "-", "first_words": "-"})
+            return parsed[:len(df_records)] 
+        except Exception as e:
+            return f"API 에러 발생: {str(e)}"
 
-### ✨ 새롭게 추가된 완벽한 조회 기능!
-1. **탭(Tab) 기능 도입:** 화면 상단에 `[새로운 상담 분석]`과 `[누적 데이터 조회]` 버튼이 생겨서, 분석할 때와 과거 기록을 찾아볼 때 화면을 분리해 깔끔하게 관리할 수 있습니다.
-2. **학생별 이름 검색 기능:** 누적 조회 탭에서 **드롭다운 박스로 학생 이름을 선택**할 수 있습니다. 이름을 고르면 해당 학생이 그동안 받았던 모든 상담 내역이 **가장 최근 날짜부터 역순으로 '카드형 리포트' 형태로 쫙 펼쳐집니다!**
-3. **가독성 최적화:** 표 안에 빽빽하게 갇혀서 잘려 보이던 긴 텍스트들이, 예쁜 박스 안에 깔끔하게 정돈되어 엑셀 켤 필요 없이 웹사이트에서 완벽한 모니터링이 가능해졌습니다.
+    if file:
+        new_df = pd.read_csv(file)
+        st.info(f"📄 총 {len(new_df)}건의 새로운 상담 데이터가 확인되었습니다.")
 
-깃허브에 코드를 업데이트하시고 스트림릿을 새로고침 한 뒤, **두 번째 탭**을 눌러보세요. 선생님께서 올리신 방대한 데이터가 한눈에 쏙 들어오게 정리된 것을 보실 수 있을 겁니다!
+        if st.button("🚀 분석 시작 및 DB(구글 시트)에 영구 저장하기"):
+            with st.spinner("AI가 분석하고 구글 서버에 저장 중입니다. 잠시만 기다려주세요..."):
+                parsed_data = analyze_all_counseling(new_df)
+                
+                if isinstance(parsed_data, str):
+                    st.error(parsed_data)
+                elif not parsed_data:
+                    st.error("오류가 발생했습니다.")
+                else:
+                    analysis_df = pd.DataFrame(parsed_data)
+                    analysis_df.rename(columns={
+                        "domain": "주요영역", "emotion": "핵심감정", "cause": "심리적원인",
+                        "goal": "개입목표", "action": "교사행동지침", "first_words": "추천첫마디"
+                    }, inplace=True)
+
+                    final_df = pd.concat([new_df.reset_index(drop=True), analysis_df], axis=1)
+                    final_df['상담일자'] = pd.to_datetime(final_df['상담일자']).dt.strftime('%Y-%m-%d')
+                    
+                    # 빈칸(NaN) 에러 방지 처리
+                    final_df = final_df.fillna("") 
+                    
+                    # 구글 시트에 데이터 밀어넣기 (Append)
+                    data_to_append = final_df[DB_COLUMNS].values.tolist()
+                    sheet.append_rows(data_to_append)
+                    
+                    st.success("✅ 분석 완료! 구글 스프레드시트에 영구적으로 저장되었습니다.")
+                    st.divider()
+                    
+                    st.subheader("📋 방금 분석된 학생 상세 리포트")
+                    for idx, row in final_df.iterrows():
+                        display_student_card(row)
+
+# ------------------------------------------
+# [탭 2] 누적 데이터 조회 및 모니터링
+# ------------------------------------------
+with tab2:
+    if db_df.empty:
+        st.info("아직 누적된 상담 데이터가 없습니다. 첫 번째 탭에서 상담 기록을 분석하고 저장해 보세요!")
+    else:
+        st.subheader("📈 전체 누적 통계 대시보드")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("**📊 주요 영역별 상담 누적 건수**")
+            st.bar_chart(db_df["주요영역"].value_counts())
+        with col2:
+            st.markdown("**💡 발견된 핵심 감정 빈도수**")
+            st.dataframe(db_df["핵심감정"].value_counts().reset_index().rename(columns={"핵심감정":"키워드", "count":"빈도수"}), hide_index=True, use_container_width=True)
+
+        st.divider()
+        st.subheader("🔍 학생별 상세 상담 기록 조회")
+        
+        # 전체 학생 명단 추출 (중복 제거)
+        student_list = ["전체 학생 요약 표로 보기"] + list(db_df["학생명"].unique())
+        selected_student = st.selectbox("조회할 학생을 선택하세요:", student_list)
+        
+        if selected_student == "전체 학생 요약 표로 보기":
+            st.markdown("전체 학생의 상담 기록이 요약 표 형태로 제공됩니다. (우측 상단 버튼을 눌러 엑셀로 다운로드 가능)")
+            st.dataframe(db_df, use_container_width=True, hide_index=True)
+        else:
+            # 선택한 학생의 데이터만 필터링 (최신 날짜가 위로 오도록 정렬)
+            student_records = db_df[db_df["학생명"] == selected_student].sort_values(by="상담일자", ascending=False)
+            st.success(f"총 {len(student_records)}건의 [{selected_student}] 학생 상담 기록이 발견되었습니다. (최근 상담순)")
+            
+            for idx, row in student_records.iterrows():
+                display_student_card(row)
