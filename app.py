@@ -6,8 +6,8 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # ==========================================
-# 🚨 [필수 확인] 선생님이 만드신 구글 시트 이름으로 반드시 변경해주세요!
-SHEET_NAME = "학생상담누적DB" 
+# 🚨 [필수 확인] 여기에 구글 시트 인터넷 주소창의 URL을 통째로 붙여넣어 주세요!
+SHEET_URL = "https://docs.google.com/spreadsheets/d/14mUDHaDal_-ErQIMPNYmy5MPllZ0EZaNcuSFUwso0ZI/edit?gid=0#gid=0" 
 # ==========================================
 
 # 저장할 엑셀 기둥(컬럼) 이름 세팅
@@ -34,11 +34,11 @@ st.set_page_config(page_title="학생 심리 분석 시스템", layout="wide")
 st.title("🧠 AI 학생 심리 상담 심층 분석 시스템 (DB 연동형)")
 st.markdown("단 한 번의 분석으로 엑셀 파일을 정리하고, 구글 클라우드에 데이터를 영구적으로 누적합니다.")
 
-# 2. 구글 시트 데이터 불러오기
+# 2. 구글 시트 URL로 확실하게 데이터 불러오기
 try:
-    sheet = client.open(SHEET_NAME).sheet1
+    sheet = client.open_by_url(SHEET_URL).sheet1
 except Exception as e:
-    st.error(f"❌ '{SHEET_NAME}' 구글 시트를 찾을 수 없습니다. 시트 이름이 맞는지, 로봇 이메일로 '편집자' 공유를 하셨는지 확인해 주세요!")
+    st.error("❌ 구글 시트에 접근할 수 없습니다. URL이 정확한지, 공유 권한이 잘 들어가 있는지 확인해 주세요!")
     st.stop()
 
 # 기존 데이터 읽기
@@ -110,7 +110,6 @@ def analyze_all_counseling(df_records):
         )
         response = model.generate_content(prompt)
         
-        # 줄바꿈 오류 방지를 위해 분리 작성
         raw_text = response.text.strip()
         if raw_text.startswith("```json"):
             raw_text = raw_text[7:]
