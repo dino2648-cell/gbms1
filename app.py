@@ -6,8 +6,8 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # ==========================================
-# 🚨 [필수 확인] 여기에 구글 시트 인터넷 주소창의 URL을 통째로 붙여넣어 주세요!
-SHEET_URL = "https://docs.google.com/spreadsheets/d/14mUDHaDal_-ErQIMPNYmy5MPllZ0EZaNcuSFUwso0ZI/edit?gid=0#gid=0" 
+# 🚨 주소 전체 대신, 선생님 시트의 '고유 번호(ID)'만 사용합니다! (수정 완료)
+SHEET_ID = "14mUDHaDal_-ErQIMPNYmy5MPllZ0EZaNcuSFUwso0ZI" 
 # ==========================================
 
 # 저장할 엑셀 기둥(컬럼) 이름 세팅
@@ -34,11 +34,12 @@ st.set_page_config(page_title="학생 심리 분석 시스템", layout="wide")
 st.title("🧠 AI 학생 심리 상담 심층 분석 시스템 (DB 연동형)")
 st.markdown("단 한 번의 분석으로 엑셀 파일을 정리하고, 구글 클라우드에 데이터를 영구적으로 누적합니다.")
 
-# 2. 구글 시트 URL로 확실하게 데이터 불러오기
+# 2. 구글 시트 고유 ID로 100% 확실하게 데이터 불러오기
 try:
-    sheet = client.open_by_url(SHEET_URL).sheet1
+    sheet = client.open_by_key(SHEET_ID).sheet1
 except Exception as e:
-    st.error("❌ 구글 시트에 접근할 수 없습니다. URL이 정확한지, 공유 권한이 잘 들어가 있는지 확인해 주세요!")
+    st.error("❌ 구글 시트에 접근할 수 없습니다. 로봇 이메일에 '편집자' 권한이 잘 부여되었는지 확인해 주세요.")
+    st.warning(f"🔍 [상세 에러 원인 분석]: {str(e)}") # 👈 진짜 에러 원인을 화면에 띄워줍니다!
     st.stop()
 
 # 기존 데이터 읽기
