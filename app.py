@@ -153,6 +153,8 @@ if file:
 
                 final_df = pd.concat([new_df.reset_index(drop=True), analysis_df], axis=1)
                 final_df['상담일자'] = pd.to_datetime(final_df['상담일자']).dt.strftime('%Y-%m-%d')
+                # 👉 추가된 코드: 컴퓨터용 빈칸(NaN)을 일반 빈칸("")으로 깔끔하게 청소!
+                final_df = final_df.fillna("")
                 
                 # 구글 시트에 데이터 밀어넣기 (Append)
                 data_to_append = final_df[DB_COLUMNS].values.tolist()
