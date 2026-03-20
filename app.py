@@ -7,11 +7,11 @@ from google.oauth2.service_account import Credentials
 
 # ==========================================
 # 🚨 선생님 시트의 '고유 번호(ID)'
-SHEET_ID = "14mUDHaDal_-ErQIMPNYmy5MPllZ0EZaNcuSFUwso0ZI" 
+SHEET_ID = "14mUDHaDal_-ErQIMPNYmy5MPllZ0E ঐতিহ্যQIMPNYmy5MPllZ0EZaNcuSFUwso0ZI" 
 # ==========================================
 
-# 저장할 엑셀 기둥(컬럼) 이름 세팅
-DB_COLUMNS = ["상담일자", "학생명", "상담내용", "주요영역", "핵심감정", "심리적원인", "개입목표", "교사행동지침", "추천첫마디"]
+# 🌟 [업데이트] 새로운 기둥(컬럼) 2개 추가!
+DB_COLUMNS = ["상담일자", "학생명", "상담내용", "상담요약", "주요영역", "핵심감정", "심리적원인", "전문적분석", "개입목표", "교사행동지침", "추천첫마디"]
 
 # 1. API 및 구글 시트 권한 설정
 API_KEY = st.secrets["GEMINI_API_KEY"]
@@ -31,8 +31,8 @@ client = init_connection()
 
 # 페이지 설정
 st.set_page_config(page_title="학생 심리 분석 시스템", layout="wide")
-st.title("🧠 AI 학생 심리 상담 심층 분석 시스템")
-st.markdown("단 한 번의 분석으로 엑셀 파일을 정리하고, 구글 클라우드에 데이터를 영구적으로 누적 및 조회합니다.")
+st.title("🧠 AI 학생 심리 상담 심층 분석 시스템 (PRO)")
+st.markdown("단 한 번의 분석으로 상담을 요약하고, 전문가 수준의 심리 분석 결과를 구글 클라우드에 영구 누적합니다.")
 
 # 2. 구글 시트 데이터 불러오기 (최신화)
 try:
@@ -48,20 +48,28 @@ if not existing_data:
 else:
     db_df = pd.DataFrame(existing_data[1:], columns=existing_data[0])
 
-# 🎨 [가독성 개선] 개별 학생 리포트를 예쁜 카드로 그려주는 함수
+# 🎨 [가독성+전문성 개선] 개별 학생 리포트를 예쁜 카드로 그려주는 함수
 def display_student_card(row):
     with st.container(border=True):
         st.markdown(f"### 👤 {row['학생명']} 학생 (상담일: {row['상담일자']})")
+        
+        # 🌟 새로 추가된 '상담 요약'을 눈에 띄게 배치
+        st.info(f"**📝 상담 핵심 요약:** {row['상담요약']}")
+        
         col_left, col_right = st.columns([1, 1])
         with col_left:
-            st.info(f"**🗣️ 실제 상담 내용**\n\n{row['상담내용']}")
-        with col_right:
+            with st.expander("🗣️ 실제 상담 내용 원본 보기 (클릭)"):
+                st.write(row['상담내용'])
             st.markdown(f"**📌 주요 영역:** `{row['주요영역']}`")
             st.markdown(f"**💡 핵심 감정:** `{row['핵심감정']}`")
+        with col_right:
             st.markdown(f"**🔍 심리적 원인:** {row['심리적원인']}")
             st.markdown(f"**🎯 개입 목표:** {row['개입목표']}")
+            
+        # 🌟 새로 추가된 '전문적 분석' 및 지침
+        st.success(f"**🧠 전문가 심층 분석 (심리학적 관점):** {row['전문적분석']}")
         st.warning(f"**🛠️ 교사 행동 지침:** {row['교사행동지침']}")
-        st.success(f"**💬 추천 첫 마디:** {row['추천첫마디']}")
+        st.markdown(f"> **💬 추천 첫 마디:** {row['추천첫마디']}")
 
 # ==========================================
 # 🗂️ 화면을 2개의 탭으로 깔끔하게 분리
@@ -86,8 +94,9 @@ with tab1:
         for i, row in df_records.iterrows():
             records_text += f"[ID: {i}] 학생명: {row['학생명']}, 상담내용: {row['상담내용']}\n"
 
+        # 🌟 AI 프롬프트 대폭 강화 (요약 및 전문 분석 추가)
         prompt = f"""
-        당신은 15년 차 경력의 전문 학생 심리 상담사입니다.
+        당신은 15년 차 경력의 수석 학생 심리 상담사 및 교육 심리학 전문가입니다.
         아래 [학생 상담 기록 목록]을 모두 분석하여, 반드시 JSON 배열(Array) 형식으로 출력하세요.
         총 {len(df_records)}명의 데이터가 있습니다. 반드시 {len(df_records)}개의 JSON 객체를 순서대로 배열에 담아 반환하세요.
         마크다운이나 다른 설명은 일절 적지 말고 오직 JSON 배열만 출력하세요.
@@ -98,9 +107,11 @@ with tab1:
         [출력 JSON 양식]
         [
           {{
+            "summary": "(긴 상담 내용을 1~2문장으로 핵심만 명확하게 요약)",
             "domain": "(학업/교우관계/심리정서/진로/가정/학교생활 중 1개)",
             "emotion": "(예: 불안, 무기력 등 핵심 감정 1~2개)",
             "cause": "(이 문제가 발생한 근본적 원인을 1문장으로 추정)",
+            "professional_insight": "(발달 심리학, 상담 이론 등 전문적인 관점에서의 심층 분석 1~2문장)",
             "goal": "(상담 시 달성해야 할 단기적 목표)",
             "action": "(교사가 즉시 시도해볼 수 있는 구체적인 지도 방법)",
             "first_words": "(학생의 마음을 열기 위한 교사의 따뜻한 첫 마디)"
@@ -111,13 +122,16 @@ with tab1:
             model = genai.GenerativeModel(model_name="gemini-2.5-flash", generation_config={"response_mime_type": "application/json"})
             response = model.generate_content(prompt)
             
-            # 💡 줄바꿈 에러를 원천 차단하는 안전한 텍스트 청소 코드!
             raw_text = response.text.strip()
             raw_text = raw_text.replace("```json", "").replace("```", "").strip()
             
             parsed = json.loads(raw_text)
             while len(parsed) < len(df_records):
-                parsed.append({"domain": "분석누락", "emotion": "-", "cause": "누락", "goal": "-", "action": "-", "first_words": "-"})
+                parsed.append({
+                    "summary": "누락", "domain": "분석누락", "emotion": "-", 
+                    "cause": "누락", "professional_insight": "누락", 
+                    "goal": "-", "action": "-", "first_words": "-"
+                })
             return parsed[:len(df_records)] 
         except Exception as e:
             return f"API 에러 발생: {str(e)}"
@@ -126,8 +140,8 @@ with tab1:
         new_df = pd.read_csv(file)
         st.info(f"📄 총 {len(new_df)}건의 새로운 상담 데이터가 확인되었습니다.")
 
-        if st.button("🚀 분석 시작 및 DB(구글 시트)에 영구 저장하기"):
-            with st.spinner("AI가 분석하고 구글 서버에 저장 중입니다. 잠시만 기다려주세요..."):
+        if st.button("🚀 심층 분석 시작 및 DB(구글 시트)에 영구 저장하기"):
+            with st.spinner("AI가 상담 내용을 요약하고 전문가 관점에서 심층 분석 중입니다..."):
                 parsed_data = analyze_all_counseling(new_df)
                 
                 if isinstance(parsed_data, str):
@@ -137,17 +151,18 @@ with tab1:
                 else:
                     analysis_df = pd.DataFrame(parsed_data)
                     analysis_df.rename(columns={
+                        "summary": "상담요약",
                         "domain": "주요영역", "emotion": "핵심감정", "cause": "심리적원인",
+                        "professional_insight": "전문적분석",
                         "goal": "개입목표", "action": "교사행동지침", "first_words": "추천첫마디"
                     }, inplace=True)
 
                     final_df = pd.concat([new_df.reset_index(drop=True), analysis_df], axis=1)
                     final_df['상담일자'] = pd.to_datetime(final_df['상담일자']).dt.strftime('%Y-%m-%d')
                     
-                    # 빈칸(NaN) 에러 방지 처리
-                    final_df = final_df.fillna("") 
+                    final_df = final_df.fillna("") # 빈칸 에러 방지
                     
-                    # 구글 시트에 데이터 밀어넣기 (Append)
+                    # 구글 시트에 저장
                     data_to_append = final_df[DB_COLUMNS].values.tolist()
                     sheet.append_rows(data_to_append)
                     
@@ -182,10 +197,9 @@ with tab2:
         selected_student = st.selectbox("조회할 학생을 선택하세요:", student_list)
         
         if selected_student == "전체 학생 요약 표로 보기":
-            st.markdown("전체 학생의 상담 기록이 요약 표 형태로 제공됩니다. (우측 상단 버튼을 눌러 엑셀로 다운로드 가능)")
+            st.markdown("전체 학생의 상담 기록이 요약 표 형태로 제공됩니다.")
             st.dataframe(db_df, use_container_width=True, hide_index=True)
         else:
-            # 선택한 학생의 데이터만 필터링 (최신 날짜가 위로 오도록 정렬)
             student_records = db_df[db_df["학생명"] == selected_student].sort_values(by="상담일자", ascending=False)
             st.success(f"총 {len(student_records)}건의 [{selected_student}] 학생 상담 기록이 발견되었습니다. (최근 상담순)")
             
